@@ -1,3 +1,11 @@
+# created by virtualenv automatically
+/bin
+/lib
+.vscode/
+
+pyvenv.cfg
+Case Engenharia de Dados - Grupo Boticário.pdf
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
