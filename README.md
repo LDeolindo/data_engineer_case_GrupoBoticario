@@ -74,6 +74,4 @@ DAG responsável por fazer o ETL no BigQuery dos dados do Spotify.
 ![image](https://user-images.githubusercontent.com/35854681/230971604-9f5cd224-fd7a-47ad-ba93-b3cee80a2ef3.png)
 
 
-Autor: Deolindo
-
-In: https://www.linkedin.com/in/deolindo/
+Autor: [Deolindo](https://www.linkedin.com/in/deolindo/)
