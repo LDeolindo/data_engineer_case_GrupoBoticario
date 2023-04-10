@@ -1,11 +1,11 @@
 from airflow import DAG
 from airflow.models.baseoperator import chain
-from airflow.operators.dummy_operator import DummyOperator
+from airflow.operators.empty import EmptyOperator
 from airflow.providers.google.cloud.operators.bigquery import (
-    BigQueryCreateEmptyDatasetOperator,
-    BigQueryInsertJobOperator)
+    BigQueryCreateEmptyDatasetOperator, BigQueryInsertJobOperator)
 from airflow.providers.google.cloud.operators.gcs import (
-    GCSDeleteObjectsOperator, GCSFileTransformOperator)
+    GCSCreateBucketOperator, GCSDeleteBucketOperator, GCSDeleteObjectsOperator,
+    GCSFileTransformOperator)
 from airflow.providers.google.cloud.sensors.bigquery import \
     BigQueryTableExistenceSensor
 from airflow.providers.google.cloud.sensors.gcs import GCSObjectExistenceSensor
@@ -14,8 +14,9 @@ from airflow.providers.google.cloud.transfers.gcs_to_bigquery import \
 from airflow.utils.dates import datetime
 from airflow.utils.task_group import TaskGroup
 
-BUCKET = "data_engineer_case_grupoboticario"
-PREFIX = "landing_zone/base_vendas"
+BUCKET = "grupoboticario-landing-zone-vendas"
+BUCKET_PROCESSING = "grupoboticario-processing-zone-vendas"
+PREFIX = "base_vendas"
 PROJECT_ID = "case-grupo-boticario"
 DATASET_PROCESSING_ZONE = "processing_zone_base_vendas"
 DATASET_REFINED_ZONE = "refined_zone_base_vendas"
@@ -44,7 +45,7 @@ with DAG(
     default_args=default_args,
     catchup=False,
 ) as dag:
-    begin = DummyOperator(task_id="begin")
+    begin = EmptyOperator(task_id="begin")
 
     with TaskGroup(group_id="object_existence_checks") as object_existence_check_group:
         for key, value in check_dict.items():
@@ -57,6 +58,13 @@ with DAG(
     )
 
     with TaskGroup(group_id="load_data_from_gcs_to_bq") as load_data_group:
+        create_gcs_processing_bucket = GCSCreateBucketOperator(
+            task_id="create_gcs_processing_bucket",
+            bucket_name=BUCKET_PROCESSING,
+            storage_class="MULTI_REGIONAL",
+        )
+
+        sub_groups = []
         for key, object in check_dict.items():
             prefix = "processing_zone/base_vendas"
 
@@ -79,12 +87,17 @@ with DAG(
                     destination_project_dataset_table=f"{DATASET_PROCESSING_ZONE}.{TABLE_PROCESSING_ZONE}",
                     write_disposition="WRITE_APPEND",
                 )
-                gcs_delete_obj = GCSDeleteObjectsOperator(
-                    task_id=f"gcs_delete_csv",
-                    bucket_name=BUCKET,
-                    objects=[f"{prefix}/{key}.csv"],
-                )
-                chain(gcs_transform, gcs_to_bq, gcs_delete_obj)
+
+                chain(gcs_transform, gcs_to_bq)
+                sub_groups.append(load_data_sub_group)
+
+        delete_gcs_processing_bucket = GCSDeleteBucketOperator(
+            task_id=f"delete_gcs_processing_bucket",
+            bucket_name=BUCKET_PROCESSING,
+            force=True
+        )
+
+        chain(create_gcs_processing_bucket, sub_groups, delete_gcs_processing_bucket)
 
     check_table_vendas_exists = BigQueryTableExistenceSensor(
         task_id=f"check_for_table_{TABLE_PROCESSING_ZONE}",
@@ -109,7 +122,7 @@ with DAG(
                 },
             )
 
-    end = DummyOperator(task_id="end")
+    end = EmptyOperator(task_id="end")
 
     chain(
         begin,
